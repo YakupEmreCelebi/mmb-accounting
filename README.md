@@ -19,6 +19,8 @@ Her işlem çift taraflı kayıttır (borç = alacak). Tutarlar kuruş cinsinden
 | Kredi kartı | Alım günü gider; ekstre ödemesi transfer (gider iki kez sayılmaz). “Ekstre ile doldur” satırları okur, elle girilenleri eşleştirir |
 | Raporlar | Satış → malzeme → personel → prime cost → işletme giderleri → kâr; Excel'e aktarma |
 
+Ertelenen işler ve öneriler: [YAPILACAKLAR.md](YAPILACAKLAR.md)
+
 ## Güvenlik
 
 - **Veriler yalnızca cihazda** (IndexedDB) durur. GitHub Pages'te sadece uygulamanın dosyaları vardır; uygulama başka hiçbir sunucuya veri göndermez. Adresi açan herkes kendi cihazında boş bir uygulama görür, başkasının verisine erişemez.
