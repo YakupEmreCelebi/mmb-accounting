@@ -243,3 +243,56 @@ export function totalOf(rows: CashBookRow[]): CashBookTotal {
   t.cashBalance = rows.length ? rows[rows.length - 1].cashBalance : 0;
   return t;
 }
+
+// ---------------------------------------------------------------- columns (shared by the screen and the Excel export)
+
+export type BookGroup = 'satis' | 'yemek' | 'ciro' | 'gider' | 'sonuc' | 'kasa';
+
+export const BOOK_GROUP_LABEL: Record<BookGroup, string> = {
+  satis: 'SATIŞ',
+  yemek: 'YEMEK ÇEKLERİ',
+  ciro: 'CİRO',
+  gider: 'GİDERLER',
+  sonuc: 'SONUÇ',
+  kasa: 'KASA',
+};
+
+export interface BookCol {
+  key: string;
+  label: string;
+  group: BookGroup;
+  get: (f: CashBookFigures) => Kurus;
+  /** Auto-calculated (grey in the Excel). */
+  computed?: boolean;
+}
+
+/** Column order of the Excel "Günlük Kasa" sheet. */
+export function bookColumns(c: CashBookColumns): BookCol[] {
+  return [
+    ...c.sales.map((m) => ({ key: `s-${m.id}`, label: m.name.replace(/ POS$/, ''), group: 'satis' as const, get: (f: CashBookFigures) => f.sales[m.id] ?? 0 })),
+    ...c.meal.map((m) => ({ key: `m-${m.id}`, label: m.name.replace(/ \(.*\)$/, ''), group: 'yemek' as const, get: (f: CashBookFigures) => f.sales[m.id] ?? 0 })),
+    { key: 'mealTotal', label: 'Yemek çeki toplam', group: 'yemek', get: (f) => f.mealTotal, computed: true },
+    { key: 'refund', label: 'İade / düzeltme', group: 'ciro', get: (f) => f.refund },
+    { key: 'netSales', label: 'Toplam ciro', group: 'ciro', get: (f) => f.netSales, computed: true },
+    { key: 'expenses', label: 'Masraf', group: 'gider', get: (f) => f.expenses },
+    ...c.people.map((p) => ({ key: `p-${p.id}`, label: p.name, group: 'gider' as const, get: (f: CashBookFigures) => f.personnel[p.id] ?? 0 })),
+    { key: 'totalCost', label: 'Toplam gider', group: 'gider', get: (f) => f.totalCost, computed: true },
+    { key: 'net', label: 'Net', group: 'sonuc', get: (f) => f.net, computed: true },
+    { key: 'nonCashPaid', label: 'Kasa dışı ödenen gider', group: 'kasa', get: (f) => f.nonCashPaid },
+    { key: 'otherCash', label: 'Diğer kasa hareketi', group: 'kasa', get: (f) => f.otherCash },
+    { key: 'variance', label: 'Kasa farkı (+/−)', group: 'kasa', get: (f) => f.variance },
+    { key: 'cashChange', label: 'Nakitten kalan', group: 'kasa', get: (f) => f.cashChange, computed: true },
+    { key: 'cashBalance', label: 'Kasadaki nakit', group: 'kasa', get: (f) => f.cashBalance, computed: true },
+  ] as BookCol[];
+}
+
+/** Consecutive columns of the same group, for the merged group header row. */
+export function groupSpans(cols: BookCol[]): Array<{ group: BookGroup; span: number }> {
+  const out: Array<{ group: BookGroup; span: number }> = [];
+  for (const c of cols) {
+    const last = out[out.length - 1];
+    if (last && last.group === c.group) last.span++;
+    else out.push({ group: c.group, span: 1 });
+  }
+  return out;
+}

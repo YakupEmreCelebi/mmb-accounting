@@ -1,26 +1,19 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarCheck, CalendarDays, Table2 } from 'lucide-react';
-import { buildCashBook, type CashBookFigures, type CashBookRow } from '../../domain/cashBook';
+import { CalendarCheck, CalendarDays, FileSpreadsheet, Share2, Table2 } from 'lucide-react';
+import { BOOK_GROUP_LABEL, bookColumns, buildCashBook, groupSpans, type BookCol, type BookGroup, type CashBookFigures, type CashBookRow } from '../../domain/cashBook';
 import { formatDate, formatMonth, monthKey, todayISO, weekday } from '../../lib/dates';
 import { formatAmountInput, type Kurus } from '../../lib/money';
 import { useData } from '../../state/data';
-import { Button, Card, EmptyState, PageHeader, Select, Toggle, cx } from '../../ui';
+import { Button, Card, EmptyState, Modal, PageHeader, Select, Toggle, cx } from '../../ui';
+import { useUI } from '../../state/ui';
+import { shareOrDownload, stamp } from '../../lib/share';
+import type { CashBook as CashBookData } from '../../domain/cashBook';
+import { buildBookWorkbook } from './bookExcel';
 
-type Group = 'satis' | 'yemek' | 'ciro' | 'gider' | 'sonuc' | 'kasa';
-
-interface Col {
-  key: string;
-  label: string;
-  group: Group;
-  get: (f: CashBookFigures) => Kurus;
-  /** Grey like the Excel's auto-calculated columns. */
-  computed?: boolean;
-  /** For the cash balance: show the carried value even on empty days. */
-  balance?: boolean;
-}
-
-const GROUP_LABEL: Record<Group, string> = { satis: 'SATIŞ', yemek: 'YEMEK ÇEKLERİ', ciro: 'CİRO', gider: 'GİDERLER', sonuc: 'SONUÇ', kasa: 'KASA' };
+type Group = BookGroup;
+type Col = BookCol;
+const GROUP_LABEL = BOOK_GROUP_LABEL;
 const GROUP_TINT: Record<Group, string> = {
   satis: 'bg-sky-50 text-sky-900',
   yemek: 'bg-emerald-50 text-emerald-900',
@@ -39,6 +32,7 @@ export function CashBook() {
   const today = todayISO();
   const [month, setMonth] = useState('');
   const [showEmpty, setShowEmpty] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLTableSectionElement>(null);
   const monthRefs = useRef(new Map<string, HTMLTableRowElement>());
@@ -49,35 +43,8 @@ export function CashBook() {
     [d.txns, d.dayCloses, d.methods, d.contacts, d.accounts, today],
   );
 
-  const cols: Col[] = useMemo(() => {
-    const { sales, meal, people } = book.columns;
-    return [
-      ...sales.map((m) => ({ key: `s-${m.id}`, label: m.name.replace(/ POS$/, ''), group: 'satis' as const, get: (f: CashBookFigures) => f.sales[m.id] ?? 0 })),
-      ...meal.map((m) => ({ key: `m-${m.id}`, label: m.name.replace(/ \(.*\)$/, ''), group: 'yemek' as const, get: (f: CashBookFigures) => f.sales[m.id] ?? 0 })),
-      { key: 'mealTotal', label: 'Yemek çeki toplam', group: 'yemek', get: (f) => f.mealTotal, computed: true },
-      { key: 'refund', label: 'İade / düzeltme', group: 'ciro', get: (f) => f.refund },
-      { key: 'netSales', label: 'Toplam ciro', group: 'ciro', get: (f) => f.netSales, computed: true },
-      { key: 'expenses', label: 'Masraf', group: 'gider', get: (f) => f.expenses },
-      ...people.map((p) => ({ key: `p-${p.id}`, label: p.name, group: 'gider' as const, get: (f: CashBookFigures) => f.personnel[p.id] ?? 0 })),
-      { key: 'totalCost', label: 'Toplam gider', group: 'gider', get: (f) => f.totalCost, computed: true },
-      { key: 'net', label: 'Net', group: 'sonuc', get: (f) => f.net, computed: true },
-      { key: 'nonCashPaid', label: 'Kasa dışı ödenen gider', group: 'kasa', get: (f) => f.nonCashPaid },
-      { key: 'otherCash', label: 'Diğer kasa hareketi', group: 'kasa', get: (f) => f.otherCash },
-      { key: 'variance', label: 'Kasa farkı (+/−)', group: 'kasa', get: (f) => f.variance },
-      { key: 'cashChange', label: 'Nakitten kalan', group: 'kasa', get: (f) => f.cashChange, computed: true },
-      { key: 'cashBalance', label: 'Kasadaki nakit', group: 'kasa', get: (f) => f.cashBalance, computed: true, balance: true },
-    ] as Col[];
-  }, [book.columns]);
-
-  const groups = useMemo(() => {
-    const out: Array<{ group: Group; span: number }> = [];
-    for (const c of cols) {
-      const last = out[out.length - 1];
-      if (last && last.group === c.group) last.span++;
-      else out.push({ group: c.group, span: 1 });
-    }
-    return out;
-  }, [cols]);
+  const cols: Col[] = useMemo(() => bookColumns(book.columns), [book.columns]);
+  const groups = useMemo(() => groupSpans(cols), [cols]);
 
   const months = month ? book.months.filter((m) => m.month === month) : book.months;
   const current = book.months.find((m) => m.month === monthKey(today));
@@ -168,13 +135,19 @@ export function CashBook() {
         title="Kasa defteri"
         sub="Excel’deki günlük kasa defteri düzeni. Burası yalnızca görüntüleme içindir; kayıtlar Gün sonu ve işlem ekranlarından girilir. Bir güne dokunun, o günün gün sonu açılır."
         actions={
-          <Link to="/gun-sonu/bugun">
-            <Button variant="primary" icon={<CalendarCheck className="h-5 w-5" />}>
-              Bugünün gün sonu
+          <>
+            <Button icon={<FileSpreadsheet className="h-5 w-5" />} onClick={() => setExporting(true)}>
+              Excel’e aktar
             </Button>
-          </Link>
+            <Link to="/gun-sonu/bugun">
+              <Button variant="primary" icon={<CalendarCheck className="h-5 w-5" />}>
+                Bugünün gün sonu
+              </Button>
+            </Link>
+          </>
         }
       />
+      {exporting && <BookExport book={book} month={month} showEmpty={showEmpty} onClose={() => setExporting(false)} />}
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <div className="w-52">
           <Select value={month} onChange={(e) => setMonth(e.target.value)} aria-label="Ay">
@@ -247,5 +220,92 @@ export function CashBook() {
         Gri sütunlar otomatik hesaplanır. <b>Masraf</b>: günün bütün giderleri (nasıl ödendiğinden bağımsız). <b>Kasa dışı ödenen gider</b>: kartla, bankadan, veresiye ya da cepten ödenen kısım. <b>Diğer kasa hareketi</b>: kasadan bankaya yatırılan para, borç ödemeleri, tahsilatlar gibi. <b>Nakitten kalan</b>: o gün kasadaki paranın değişimi. Yeşil nokta: gün kapandı · turuncu: açık.
       </p>
     </>
+  );
+}
+
+function BookExport({ book, month, showEmpty, onClose }: { book: CashBookData; month: string; showEmpty: boolean; onClose: () => void }) {
+  const d = useData();
+  const { toast } = useUI();
+  const [busy, setBusy] = useState<'detailed' | 'summary' | null>(null);
+  const [ready, setReady] = useState<{ blob: Blob; name: string } | null>(null);
+
+  const make = async (kind: 'detailed' | 'summary') => {
+    setBusy(kind);
+    try {
+      const blob = await buildBookWorkbook(book, {
+        kind,
+        month: kind === 'detailed' && month ? month : undefined,
+        showEmpty,
+        today: todayISO(),
+        businessName: (d.settings.businessName as string) || "Mama's Burger",
+      });
+      const scope = kind === 'detailed' && month ? `_${month}` : '';
+      setReady({ blob, name: `mamas-burger_kasa-defteri_${kind === 'detailed' ? 'detayli' : 'ozet'}${scope}_${stamp()}.xlsx` });
+    } catch (e) {
+      toast('Excel hazırlanamadı: ' + (e as Error).message, 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const option = (kind: 'detailed' | 'summary', title: string, text: string) => (
+    <button
+      onClick={() => make(kind)}
+      disabled={busy !== null}
+      className="flex w-full items-start gap-3 rounded-2xl border border-ink-200 bg-white p-4 text-left transition hover:border-ink-300 active:bg-ink-50 disabled:opacity-60"
+    >
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+        <FileSpreadsheet className="h-5 w-5" />
+      </span>
+      <span>
+        <span className="block font-semibold text-ink-900">{busy === kind ? 'Hazırlanıyor…' : title}</span>
+        <span className="mt-0.5 block text-sm leading-snug text-ink-500">{text}</span>
+      </span>
+    </button>
+  );
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Kasa defterini Excel’e aktar"
+      footer={
+        ready ? (
+          <>
+            <Button onClick={() => setReady(null)}>Geri</Button>
+            <Button
+              variant="primary"
+              icon={<Share2 className="h-4 w-4" />}
+              onClick={async () => {
+                await shareOrDownload(ready.blob, ready.name);
+                onClose();
+              }}
+            >
+              Kaydet / paylaş
+            </Button>
+          </>
+        ) : (
+          <Button onClick={onClose}>Vazgeç</Button>
+        )
+      }
+    >
+      {ready ? (
+        <div className="space-y-2 text-[15px] text-ink-700">
+          <p>
+            Dosya hazır: <b className="break-all">{ready.name}</b>
+          </p>
+          <p className="text-sm text-ink-500">“Kaydet / paylaş”a dokunun. iPad’de “Dosyalara Kaydet”i ya da WhatsApp, e-posta gibi bir uygulamayı seçebilirsiniz.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {option(
+            'detailed',
+            'Detaylı (gün gün)',
+            `Eski Excel’deki “Günlük Kasa” sayfası: her gün bir satır, aylara göre bölümler ve ay toplamları. İkinci sayfada aylık özet. ${month ? `Yalnızca ${formatMonth(month)}.` : 'Bütün aylar.'}`,
+          )}
+          {option('summary', 'Özet (aylık)', 'Her ay bir satır: ay toplamları, satış günü, günlük ortalama ciro; en altta genel toplam.')}
+        </div>
+      )}
+    </Modal>
   );
 }
