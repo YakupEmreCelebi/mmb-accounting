@@ -208,11 +208,14 @@ export function Reports() {
           </CardTitle>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {variances.map((v) => (
-              <div key={v.date} className="flex items-center justify-between rounded-xl bg-ink-50 px-3 py-2 text-sm">
-                <span>
-                  {formatDate(v.date, 'short')} <span className="text-ink-500">{weekday(v.date, true)}</span>
-                </span>
-                <VarianceText v={v.variance} />
+              <div key={v.date} className="rounded-xl bg-ink-50 px-3 py-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span>
+                    {formatDate(v.date, 'short')} <span className="text-ink-500">{weekday(v.date, true)}</span>
+                  </span>
+                  <VarianceText v={v.variance} />
+                </div>
+                {v.varianceNote && <div className="mt-0.5 text-ink-600">{v.varianceNote}</div>}
               </div>
             ))}
           </div>

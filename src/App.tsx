@@ -19,6 +19,7 @@ import { Reports } from './features/reports/Reports';
 import { Settings } from './features/settings/Settings';
 import { MobileMenu } from './features/shell/MobileMenu';
 import { UpdateBanner } from './features/shell/UpdateBanner';
+import { CashBook } from './features/book/CashBook';
 
 export default function App() {
   return (
@@ -31,6 +32,7 @@ export default function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/gun-sonu" element={<DayCloseList />} />
                 <Route path="/gun-sonu/:date" element={<DayCloseForm />} />
+                <Route path="/kasa-defteri" element={<CashBook />} />
                 <Route path="/hareketler" element={<TxnList />} />
                 <Route path="/cariler" element={<Contacts />} />
                 <Route path="/cariler/kisi/:id" element={<ContactDetail />} />

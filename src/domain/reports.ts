@@ -137,6 +137,7 @@ export interface DaySalesPoint {
   byMethod: Record<string, Kurus>;
   refund: Kurus;
   variance: Kurus;
+  varianceNote?: string;
   status: DayClose['status'];
 }
 
@@ -152,6 +153,7 @@ export function dailySales(dayCloses: DayClose[], from: string, to: string): Day
         byMethod: d.sales,
         refund: d.refund || 0,
         variance: d.status === 'closed' ? d.variance ?? 0 : 0,
+        varianceNote: d.status === 'closed' ? d.varianceNote : undefined,
         status: d.status,
       };
     });

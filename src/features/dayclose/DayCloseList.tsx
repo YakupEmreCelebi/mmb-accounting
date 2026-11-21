@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarCheck, ChevronRight } from 'lucide-react';
+import { CalendarCheck, ChevronRight, Table2 } from 'lucide-react';
 import { eachDay, formatDate, monthEnd, monthKey, monthStart, todayISO, weekday } from '../../lib/dates';
 import { formatTL } from '../../lib/money';
 import { useData } from '../../state/data';
@@ -47,11 +47,16 @@ export function DayCloseList() {
         title="Gün sonu"
         sub="Her gün: satışları gir, kasayı say, günü kapat."
         actions={
-          <Link to="/gun-sonu/bugun">
-            <Button variant="primary" icon={<CalendarCheck className="h-5 w-5" />}>
-              Bugünün gün sonu
-            </Button>
-          </Link>
+          <>
+            <Link to="/kasa-defteri">
+              <Button icon={<Table2 className="h-5 w-5" />}>Excel görünümü</Button>
+            </Link>
+            <Link to="/gun-sonu/bugun">
+              <Button variant="primary" icon={<CalendarCheck className="h-5 w-5" />}>
+                Bugünün gün sonu
+              </Button>
+            </Link>
+          </>
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -90,7 +95,10 @@ export function DayCloseList() {
               <span className="tabular hidden text-right md:block">{r.dc ? formatTL(r.byType.cash, 'auto') : ''}</span>
               <span className="tabular hidden text-right md:block">{r.dc ? formatTL(r.byType.meal_card, 'auto') : ''}</span>
               <span className="tabular text-right font-semibold text-ink-900 md:block">{r.dc ? formatTL(r.net, 'auto') : ''}</span>
-              <span className="hidden text-right text-sm md:block">{r.dc?.status === 'closed' ? <VarianceText v={r.dc.variance ?? 0} /> : ''}</span>
+              <span className="hidden text-right text-sm md:block">
+                {r.dc?.status === 'closed' ? <VarianceText v={r.dc.variance ?? 0} /> : ''}
+                {r.dc?.status === 'closed' && r.dc.variance && r.dc.varianceNote ? <span className="block truncate text-xs text-ink-500" title={r.dc.varianceNote}>{r.dc.varianceNote}</span> : null}
+              </span>
               <ChevronRight className="hidden h-5 w-5 text-ink-300 md:block" />
             </Link>
           ))}

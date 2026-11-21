@@ -105,6 +105,7 @@ export async function buildWorkbook(d: AppData, from: string, to: string, pnl: P
     { header: 'İade', key: 'refund', width: 14, style: { numFmt: MONEY } },
     { header: 'Net ciro', key: 'net', width: 16, style: { numFmt: MONEY } },
     { header: 'Kasa farkı', key: 'variance', width: 14, style: { numFmt: MONEY } },
+    { header: 'Kasa farkı açıklaması', key: 'varianceNote', width: 30 },
     { header: 'Durum', key: 'status', width: 12 },
     { header: 'Not', key: 'note', width: 50 },
   ];
@@ -116,6 +117,7 @@ export async function buildWorkbook(d: AppData, from: string, to: string, pnl: P
       refund: tl(dc.refund || 0),
       net: tl(gross - (dc.refund || 0)),
       variance: dc.status === 'closed' ? tl(dc.variance ?? 0) : null,
+      varianceNote: dc.status === 'closed' && dc.variance ? dc.varianceNote ?? '' : '',
       status: dc.status === 'closed' ? 'Kapandı' : 'Açık',
       note: dc.note,
     };

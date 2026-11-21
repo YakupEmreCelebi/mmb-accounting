@@ -8,9 +8,11 @@ import { addDays, formatDate, isValidISO, todayISO, weekday } from '../../lib/da
 import { formatTL, type Kurus } from '../../lib/money';
 import { useData } from '../../state/data';
 import { useUI } from '../../state/ui';
-import { Badge, Button, Card, CardTitle, DateInput, Field, MoneyInput, Notice, PageHeader, Segmented, TextArea, cx } from '../../ui';
+import { Badge, Button, Card, CardTitle, DateInput, Field, MoneyInput, Notice, PageHeader, Segmented, TextArea, TextInput, cx } from '../../ui';
 import { TxnRow } from '../txn/TxnRows';
 import { prepareBackup, shareBackup, type PreparedBackup } from '../settings/backup';
+
+export const VARIANCE_REASONS = ['Kasiyer hatası', 'Para üstü hatası', 'Sayım hatası', 'Girilmemiş masraf', 'Sebebi bilinmiyor'];
 
 const GROUPS: Array<{ type: PaymentMethodType; title: string; hint?: string }> = [
   { type: 'pos', title: 'Banka POS', hint: 'POS cihazlarının gün sonu raporundaki toplamlar' },
@@ -41,6 +43,7 @@ function DayCloseEditor({ date }: { date: string }) {
   const [mode, setMode] = useState<'count' | 'direct'>(dc?.varianceMode ?? 'count');
   const [counted, setCounted] = useState<Kurus | null>(null);
   const [directVar, setDirectVar] = useState<Kurus | null>(null);
+  const [varianceNote, setVarianceNote] = useState(dc?.varianceNote ?? '');
   const [busy, setBusy] = useState(false);
   const [backup, setBackup] = useState<PreparedBackup | null>(null);
 
@@ -111,7 +114,7 @@ function DayCloseEditor({ date }: { date: string }) {
     setBusy(true);
     try {
       if (dirty || !dc) await save(true);
-      await repo.closeDay({ date, mode, value: mode === 'count' ? counted : directVar ?? 0, note });
+      await repo.closeDay({ date, mode, value: mode === 'count' ? counted : directVar ?? 0, note, varianceNote });
       toast('Gün kapatıldı');
       setBackup(await prepareBackup());
     } catch (e) {
@@ -314,6 +317,12 @@ function DayCloseEditor({ date }: { date: string }) {
                   <span className="text-ink-600">Fark</span>
                   <VarianceText v={dc?.variance ?? 0} />
                 </div>
+                {dc?.variance && dc.varianceNote ? (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-ink-600">Açıklama</span>
+                    <span className="text-right text-ink-900">{dc.varianceNote}</span>
+                  </div>
+                ) : null}
                 <div className="flex items-center gap-1.5 pt-1 text-sm text-ink-500">
                   <Lock className="h-4 w-4" /> {dc?.closedAt ? new Date(dc.closedAt).toLocaleString('tr-TR', { dateStyle: 'medium', timeStyle: 'short' }) : ''} tarihinde kapatıldı
                 </div>
@@ -367,6 +376,26 @@ function DayCloseEditor({ date }: { date: string }) {
                     </span>
                   )}
                 </div>
+                {(mode === 'direct' || (variance !== null && variance !== 0)) && (
+                  <Field label="Farkın açıklaması" htmlFor="var-note" hint="Neden fark çıktı? Kasa defterinde ve raporlarda görünür.">
+                    <div className="mb-2 flex flex-wrap gap-1.5">
+                      {VARIANCE_REASONS.map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setVarianceNote(r)}
+                          className={cx(
+                            'h-9 rounded-full px-3 text-sm font-medium ring-1 ring-inset transition',
+                            varianceNote === r ? 'bg-brand-700 text-white ring-brand-700' : 'bg-white text-ink-700 ring-ink-200 hover:bg-ink-50',
+                          )}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                    <TextInput id="var-note" value={varianceNote} onChange={(e) => setVarianceNote(e.target.value)} placeholder="örn. Kasiyer para üstünü fazla verdi" />
+                  </Field>
+                )}
                 <Button variant="primary" size="lg" block onClick={onClose} disabled={busy} icon={<Lock className="h-5 w-5" />}>
                   Günü kapat
                 </Button>

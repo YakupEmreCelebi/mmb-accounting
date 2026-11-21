@@ -142,6 +142,8 @@ export interface DayClose {
   countedCash?: Kurus;
   expectedCash?: Kurus;
   variance?: Kurus;
+  /** Why the till was over/short (e.g. "Kasiyer hatası"). */
+  varianceNote?: string;
   note: string;
   status: 'open' | 'closed';
   salesTxnId?: string;

@@ -198,7 +198,7 @@ export class Repo {
     return accountBalanceAt(txns, SYS.kasa, date, exclude);
   }
 
-  async closeDay(input: { date: string; mode: 'count' | 'direct'; value: Kurus | null; note?: string }): Promise<DayClose> {
+  async closeDay(input: { date: string; mode: 'count' | 'direct'; value: Kurus | null; note?: string; varianceNote?: string }): Promise<DayClose> {
     const db = this.db;
     return db.transaction('rw', [db.dayCloses, db.txns, db.history, db.settings], async () => {
       let dc = await db.dayCloses.where('date').equals(input.date).first();
@@ -224,7 +224,8 @@ export class Repo {
         if (old && !old.void) await db.txns.put({ ...old, void: true, voidReason: 'Yeniden kapatıldı', updatedAt: now });
         dc.varianceTxnId = undefined;
       }
-      const vDraft = buildDayVariance(input.date, variance, dc.id);
+      const varianceNote = variance ? input.varianceNote?.trim() || undefined : undefined;
+      const vDraft = buildDayVariance(input.date, variance, dc.id, varianceNote);
       if (vDraft) {
         const t: Txn = { ...vDraft, id: newId('t'), createdAt: now, updatedAt: now };
         await db.txns.add(t);
@@ -236,6 +237,7 @@ export class Repo {
         countedCash: input.mode === 'count' ? input.value ?? undefined : expected + variance,
         expectedCash: expected,
         variance,
+        varianceNote,
         note: input.note ?? dc.note,
         status: 'closed',
         closedAt: now,

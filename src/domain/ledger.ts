@@ -371,13 +371,15 @@ export function buildDaySales(i: DaySalesInput): TxnDraft | null {
 }
 
 /** Cash over/short: positive = kasa fazlası, negative = kasa eksiği. */
-export function buildDayVariance(date: string, variance: Kurus, dayCloseId: string): TxnDraft | null {
+export function buildDayVariance(date: string, variance: Kurus, dayCloseId: string, note?: string): TxnDraft | null {
   requireDate(date);
   if (!variance) return null;
+  const label = variance > 0 ? 'Kasa fazlası' : 'Kasa eksiği';
+  const reason = note?.trim();
   return {
     date,
     kind: 'day_variance',
-    description: variance > 0 ? 'Kasa fazlası' : 'Kasa eksiği',
+    description: reason ? `${label} — ${reason}` : label,
     postings: [
       { accountId: SYS.kasa, amount: variance },
       { accountId: SYS.variance, amount: -variance },
