@@ -1,0 +1,10 @@
+node_modules
+dist
+dev-dist
+*.local
+.DS_Store
+# İşletme verisi asla depoya girmez
+private/
+*.backup.json
+*-yedek*.json
+qa-shots/
