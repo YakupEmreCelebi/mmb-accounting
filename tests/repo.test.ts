@@ -76,4 +76,13 @@ describe('device settings', () => {
     await other.importBackup(backup);
     expect(await other.getSetting('pinHash', '')).toBe('device-pin');
   });
+
+  it('never exports the backup passphrase or PIN lockout state', async () => {
+    const repo = await fresh();
+    await repo.setSetting('backupPassphrase', 'cok gizli parola');
+    await repo.setSetting('pinFailures', { count: 3, lockedUntil: 0 });
+    const text = JSON.stringify(await repo.exportBackup());
+    expect(text).not.toContain('cok gizli parola');
+    expect(text).not.toContain('pinFailures');
+  });
 });

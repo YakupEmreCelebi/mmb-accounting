@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Archive, ArchiveRestore, Download, Lock, Pencil, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
+import { Archive, ArchiveRestore, Download, Eye, EyeOff, KeyRound, Lock, Pencil, Plus, ShieldCheck, Trash2, Upload } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, repo } from '../../db';
 import { GROUP_LABEL, KIND_LABEL, SYS, type Account, type PaymentMethod, type PaymentMethodType, type PnlGroup, type Recurring } from '../../domain/types';
@@ -11,7 +11,7 @@ import { moneyAccounts, useData } from '../../state/data';
 import { useUI } from '../../state/ui';
 import { Badge, Button, Card, CardTitle, Field, Modal, MoneyInput, Notice, PageHeader, Segmented, Select, Tabs, TextInput, Toggle, cx } from '../../ui';
 import { CategorySelect, ContactSelect, MoneyAccountSelect } from '../txn/pickers';
-import { backupAge, prepareBackup, readBackupFile, shareBackup } from './backup';
+import { backupAge, decryptBackup, isEncryptedBackup, prepareBackup, readBackupFile, shareBackup, type EncryptedBackupFile, type PreparedBackup } from './backup';
 
 type Section = 'yedek' | 'odeme' | 'hesap' | 'kategori' | 'tekrar' | 'guvenlik' | 'gecmis' | 'genel';
 
@@ -53,89 +53,292 @@ function BackupSection() {
   const d = useData();
   const { toast, confirm } = useUI();
   const age = backupAge(d);
-  const [prepared, setPrepared] = useState<{ blob: Blob; filename: string } | null>(null);
+  const encrypted = Boolean(d.settings.backupPassphrase);
+  const [prepared, setPrepared] = useState<PreparedBackup | null>(null);
+  const [needPass, setNeedPass] = useState<{ name: string; file: EncryptedBackupFile } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Prepare the file in advance so the share sheet opens straight from the tap.
   useEffect(() => {
     let alive = true;
+    setPrepared(null);
     prepareBackup().then((p) => alive && setPrepared(p));
     return () => {
       alive = false;
     };
-  }, [d.allTxns.length, d.dayCloses.length]);
+  }, [d.allTxns.length, d.dayCloses.length, encrypted, d.settings.backupPassphrase]);
+
+  const restore = async (name: string, data: unknown, usedPassphrase?: string) => {
+    const meta = (data as { counts?: Record<string, number>; exportedAt?: string }) ?? {};
+    const ok = await confirm({
+      title: 'Yedek geri yüklensin mi?',
+      message: `${name} · ${meta.exportedAt ? new Date(meta.exportedAt).toLocaleString('tr-TR') : ''} · ${meta.counts?.txns ?? '?'} kayıt, ${meta.counts?.dayCloses ?? '?'} gün sonu. Bu cihazdaki mevcut veriler silinecek.`,
+      confirmText: 'Geri yükle',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      const res = await repo.importBackup(data);
+      if (usedPassphrase && !d.settings.backupPassphrase) {
+        await repo.setSetting('backupPassphrase', usedPassphrase);
+        toast(`Geri yüklendi: ${res.txns} kayıt. Bu cihazın yedekleri de aynı parolayla şifrelenecek.`);
+      } else toast(`Geri yüklendi: ${res.txns} kayıt`);
+    } catch (err) {
+      toast((err as Error).message, 'error');
+    }
+  };
 
   const persisted = d.settings.storagePersisted as boolean | undefined;
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
-      <Card>
-        <CardTitle sub="Veriler bu cihazın içinde saklanır. Cihaz bozulur, kaybolur veya uygulama ana ekrandan silinirse veriler gider; yedek bu yüzden şart.">Yedek al</CardTitle>
-        <div className={cx('mb-4 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium', age.stale ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-900')}>
-          <ShieldCheck className="h-5 w-5" /> {age.label}
-        </div>
-        <Button
-          variant="primary"
-          size="lg"
-          block
-          icon={<Download className="h-5 w-5" />}
-          disabled={!prepared}
-          onClick={async () => {
-            if (!prepared) return;
-            if (await shareBackup(prepared)) toast('Yedek kaydedildi');
-            setPrepared(await prepareBackup());
-          }}
-        >
-          Yedeği kaydet
-        </Button>
-        <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-ink-600">
-          <li>“Yedeği kaydet”e dokunun.</li>
-          <li>Açılan menüde <b>Dosyalara Kaydet</b>’i seçin.</li>
-          <li><b>iCloud Drive</b> içinde bir klasör seçip (örn. “Mama’s Burger Yedek”) Kaydet’e basın.</li>
-        </ol>
-        <p className="mt-3 text-sm text-ink-500">Her gün sonunda bir yedek alın. Dosyalar küçüktür; eskileri silmek gerekmez.</p>
-      </Card>
+    <div className="grid items-start gap-5 lg:grid-cols-2">
+      <div className="space-y-5">
+        <Card>
+          <CardTitle sub="Veriler bu cihazın içinde saklanır. Cihaz bozulur, kaybolur veya uygulama ana ekrandan silinirse veriler gider; yedek bu yüzden şart.">Yedek al</CardTitle>
+          <div className={cx('mb-3 flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium', age.stale ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-900')}>
+            <ShieldCheck className="h-5 w-5" /> {age.label}
+          </div>
+          {encrypted ? (
+            <div className="mb-4 flex items-center gap-2 text-sm font-medium text-emerald-800">
+              <KeyRound className="h-4 w-4" /> Yedekler parolayla şifreleniyor
+            </div>
+          ) : (
+            <div className="mb-4">
+              <Notice tone="warn">Yedekler şifresiz: dosyayı ele geçiren biri içini okuyabilir. Yandaki “Yedek şifreleme”den parola belirleyin.</Notice>
+            </div>
+          )}
+          <Button
+            variant="primary"
+            size="lg"
+            block
+            icon={<Download className="h-5 w-5" />}
+            disabled={!prepared}
+            onClick={async () => {
+              if (!prepared) return;
+              if (await shareBackup(prepared)) toast('Yedek kaydedildi');
+              setPrepared(await prepareBackup());
+            }}
+          >
+            {prepared ? 'Yedeği kaydet' : 'Yedek hazırlanıyor…'}
+          </Button>
+          <ol className="mt-4 list-decimal space-y-1 pl-5 text-sm text-ink-600">
+            <li>“Yedeği kaydet”e dokunun.</li>
+            <li>Açılan menüde <b>Dosyalara Kaydet</b>’i seçin.</li>
+            <li><b>iCloud Drive</b> içinde bir klasör seçip (örn. “Mama’s Burger Yedek”) Kaydet’e basın.</li>
+          </ol>
+          <p className="mt-3 text-sm text-ink-500">Her gün sonunda bir yedek alın. Dosyalar küçüktür; eskileri silmek gerekmez. Excel’e aktarılan raporlar şifresizdir.</p>
+        </Card>
 
-      <Card>
-        <CardTitle sub="Başka bir cihaza geçerken veya bir sorun olduğunda">Yedekten geri yükle</CardTitle>
-        <Notice tone="warn">Geri yükleme bu cihazdaki bütün verilerin yerine yedekteki verileri koyar.</Notice>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="application/json,.json"
-          className="hidden"
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            e.target.value = '';
-            if (!f) return;
-            try {
-              const data = await readBackupFile(f);
-              const counts = (data as { counts?: Record<string, number>; exportedAt?: string }) ?? {};
-              const ok = await confirm({
-                title: 'Yedek geri yüklensin mi?',
-                message: `${f.name} · ${counts.exportedAt ? new Date(counts.exportedAt).toLocaleString('tr-TR') : ''}\n${counts.counts?.txns ?? '?'} kayıt, ${counts.counts?.dayCloses ?? '?'} gün sonu. Bu cihazdaki mevcut veriler silinecek.`,
-                confirmText: 'Geri yükle',
-                danger: true,
-              });
-              if (!ok) return;
-              const res = await repo.importBackup(data);
-              toast(`Geri yüklendi: ${res.txns} kayıt`);
-            } catch (err) {
-              toast((err as Error).message, 'error');
-            }
+        <Card>
+          <CardTitle sub="Başka bir cihaza geçerken veya bir sorun olduğunda">Yedekten geri yükle</CardTitle>
+          <Notice tone="warn">Geri yükleme bu cihazdaki bütün verilerin yerine yedekteki verileri koyar.</Notice>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (!f) return;
+              try {
+                const raw = await readBackupFile(f);
+                if (isEncryptedBackup(raw)) {
+                  const stored = d.settings.backupPassphrase as string | undefined;
+                  if (stored) {
+                    try {
+                      return await restore(f.name, await decryptBackup(raw, stored));
+                    } catch {
+                      /* different passphrase: ask */
+                    }
+                  }
+                  setNeedPass({ name: f.name, file: raw });
+                } else await restore(f.name, raw);
+              } catch (err) {
+                toast((err as Error).message, 'error');
+              }
+            }}
+          />
+          <Button className="mt-4" block icon={<Upload className="h-5 w-5" />} onClick={() => fileRef.current?.click()}>
+            Yedek dosyası seç
+          </Button>
+          <div className="mt-5 space-y-1 text-sm text-ink-600">
+            <div>
+              Kayıt sayısı: {d.allTxns.length} · Gün sonu: {d.dayCloses.length} · Kişi/firma: {d.contacts.length}
+            </div>
+            <div>
+              Kalıcı depolama:{' '}
+              {persisted === undefined ? 'bilinmiyor' : persisted ? <span className="font-medium text-emerald-700">açık</span> : <span className="font-medium text-amber-700">tarayıcı izin vermedi (uygulamayı ana ekrandan açın)</span>}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <EncryptionCard />
+
+      {needPass && (
+        <PassphrasePrompt
+          name={needPass.name}
+          onClose={() => setNeedPass(null)}
+          onSubmit={async (pass) => {
+            const data = await decryptBackup(needPass.file, pass);
+            setNeedPass(null);
+            await restore(needPass.name, data, pass);
           }}
         />
-        <Button className="mt-4" block icon={<Upload className="h-5 w-5" />} onClick={() => fileRef.current?.click()}>
-          Yedek dosyası seç
-        </Button>
-        <div className="mt-5 space-y-1 text-sm text-ink-600">
-          <div>Kayıt sayısı: {d.allTxns.length} · Gün sonu: {d.dayCloses.length} · Kişi/firma: {d.contacts.length}</div>
+      )}
+    </div>
+  );
+}
+
+function EncryptionCard() {
+  const d = useData();
+  const { toast, confirm } = useUI();
+  const current = d.settings.backupPassphrase as string | undefined;
+  const [editing, setEditing] = useState(!current);
+  const [p1, setP1] = useState('');
+  const [p2, setP2] = useState('');
+  const [ack, setAck] = useState(false);
+  const [reveal, setReveal] = useState(false);
+  const tooShort = p1.length > 0 && p1.length < 8;
+  const mismatch = p2.length > 0 && p1 !== p2;
+  const valid = p1.length >= 8 && p1 === p2 && ack;
+
+  useEffect(() => {
+    if (!current) setEditing(true);
+  }, [current]);
+
+  const save = async () => {
+    await repo.setSetting('backupPassphrase', p1);
+    setP1('');
+    setP2('');
+    setAck(false);
+    setEditing(false);
+    toast(current ? 'Yedek parolası değiştirildi' : 'Yedek şifreleme açıldı');
+  };
+
+  return (
+    <Card>
+      <CardTitle sub="Yedek dosyaları bu parolayla şifrelenir (AES-256). Dosyayı ele geçiren biri parolayı bilmeden açamaz.">Yedek şifreleme</CardTitle>
+      {current && !editing ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900">
+            <KeyRound className="h-5 w-5" /> Açık — yeni yedekler şifreli alınıyor
+          </div>
           <div>
-            Kalıcı depolama:{' '}
-            {persisted === undefined ? 'bilinmiyor' : persisted ? <span className="font-medium text-emerald-700">açık</span> : <span className="font-medium text-amber-700">tarayıcı izin vermedi (uygulamayı ana ekrandan açın)</span>}
+            <div className="label">Yedek parolası</div>
+            <div className="flex items-center gap-2">
+              <code className="min-h-[48px] flex-1 break-all rounded-xl bg-ink-50 px-3 py-3 font-mono text-[15px] text-ink-900">{reveal ? current : '•'.repeat(Math.min(current.length, 16))}</code>
+              <Button onClick={() => setReveal((r) => !r)} icon={reveal ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}>
+                {reveal ? 'Gizle' : 'Göster'}
+              </Button>
+            </div>
+            <p className="mt-1 text-sm text-ink-500">Parola yalnızca bu iPad’de saklanır, yedek dosyasına konmaz. Başka bir cihaza geri yüklerken sorulur.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => setEditing(true)}>Parolayı değiştir</Button>
+            <Button
+              variant="danger"
+              onClick={async () => {
+                const ok = await confirm({
+                  title: 'Şifreleme kapatılsın mı?',
+                  message: 'Bundan sonraki yedekler şifresiz olur; dosyayı ele geçiren biri içini okuyabilir. Daha önce alınan şifreli yedekler yine eski parolayla açılır.',
+                  confirmText: 'Kapat',
+                  danger: true,
+                });
+                if (!ok) return;
+                await db.settings.delete('backupPassphrase');
+                toast('Yedek şifreleme kapatıldı');
+              }}
+            >
+              Şifrelemeyi kapat
+            </Button>
           </div>
         </div>
-      </Card>
-    </div>
+      ) : (
+        <div className="space-y-4">
+          <Notice tone="warn">
+            Bu parolayı bir kâğıda yazıp güvenli bir yerde saklayın. Parola olmadan şifreli yedekler açılamaz; unutulursa kurtarmanın yolu yok.
+          </Notice>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Yeni parola (en az 8 karakter)" htmlFor="bp1" error={tooShort ? 'En az 8 karakter olmalı.' : undefined} hint="Örnek: 3–4 kelimelik, kolay hatırlanan bir cümle">
+              <TextInput id="bp1" type="password" autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={p1} onChange={(e) => setP1(e.target.value)} />
+            </Field>
+            <Field label="Parola tekrar" htmlFor="bp2" error={mismatch ? 'Parolalar aynı değil.' : undefined}>
+              <TextInput id="bp2" type="password" autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={p2} onChange={(e) => setP2(e.target.value)} />
+            </Field>
+          </div>
+          <label className="flex items-start gap-3 text-[15px] text-ink-800">
+            <input type="checkbox" className="mt-1 h-5 w-5 accent-brand-700" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+            Parolayı bir yere yazdım. Unutursam şifreli yedeklerin açılamayacağını biliyorum.
+          </label>
+          {current && <p className="text-sm text-ink-500">Parolayı değiştirirseniz eski yedekler eski parolayla açılır.</p>}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" disabled={!valid} icon={<KeyRound className="h-4 w-4" />} onClick={save}>
+              {current ? 'Yeni parolayı kaydet' : 'Şifrelemeyi aç'}
+            </Button>
+            {current && (
+              <Button
+                onClick={() => {
+                  setEditing(false);
+                  setP1('');
+                  setP2('');
+                  setAck(false);
+                }}
+              >
+                Vazgeç
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function PassphrasePrompt({ name, onClose, onSubmit }: { name: string; onClose: () => void; onSubmit: (pass: string) => Promise<void> }) {
+  const [pass, setPass] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    if (!pass) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onSubmit(pass);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      open
+      size="sm"
+      onClose={onClose}
+      title="Şifreli yedek"
+      footer={
+        <>
+          <Button onClick={onClose}>Vazgeç</Button>
+          <Button variant="primary" disabled={!pass || busy} onClick={go}>
+            {busy ? 'Açılıyor…' : 'Aç'}
+          </Button>
+        </>
+      }
+    >
+      <p className="mb-3 text-[15px] text-ink-700">
+        <b>{name}</b> şifreli. Yedeği alırken kullanılan parolayı girin.
+      </p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void go();
+        }}
+      >
+        <TextInput autoFocus type="password" autoComplete="current-password" autoCapitalize="off" autoCorrect="off" spellCheck={false} value={pass} onChange={(e) => setPass(e.target.value)} aria-label="Yedek parolası" />
+      </form>
+      {error && <p className="mt-2 text-sm font-medium text-red-700">{error}</p>}
+    </Modal>
   );
 }
 
@@ -584,7 +787,7 @@ function PinSection() {
   const valid = /^\d{4}$/.test(pin) && pin === pin2;
   return (
     <Card className="max-w-xl">
-      <CardTitle sub="Uygulama açılırken ve 5 dakikadan uzun arka planda kaldıktan sonra 4 haneli şifre sorar.">Uygulama şifresi</CardTitle>
+      <CardTitle sub="Uygulama açılırken ve 5 dakikadan uzun arka planda kaldıktan sonra 4 haneli şifre sorar. 5 yanlış denemeden sonra her yanlışta bekleme süresi uzar (30 sn’den 15 dk’ya kadar).">Uygulama şifresi</CardTitle>
       <div className="mb-4 flex items-center gap-2 text-sm">
         <Lock className="h-4 w-4" /> {has ? <span className="font-medium text-emerald-700">Şifre açık</span> : <span className="text-ink-500">Şifre yok</span>}
       </div>
@@ -621,7 +824,9 @@ function PinSection() {
           </Button>
         )}
       </div>
-      <p className="mt-4 text-sm text-ink-500">Şifreyi unutursanız: uygulamayı silip yedekten geri yüklemek gerekir. Yedek dosyası şifreyi içermez.</p>
+      <p className="mt-4 text-sm text-ink-500">
+        Şifre bu iPad’de, kendisi değil geri çevrilemeyen özeti olarak saklanır; hiçbir yere gönderilmez ve yedeğe konmaz. Bu şifre uygulamaya girişi engeller, verileri şifrelemez: asıl koruma iPad’in kendi şifresi / Face ID’sidir. Şifreyi unutursanız uygulamayı silip son yedeği geri yüklemek gerekir.
+      </p>
     </Card>
   );
 }

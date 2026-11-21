@@ -19,6 +19,13 @@ Her işlem çift taraflı kayıttır (borç = alacak). Tutarlar kuruş cinsinden
 | Kredi kartı | Alım günü gider; ekstre ödemesi transfer (gider iki kez sayılmaz). “Ekstre ile doldur” satırları okur, elle girilenleri eşleştirir |
 | Raporlar | Satış → malzeme → personel → prime cost → işletme giderleri → kâr; Excel'e aktarma |
 
+## Güvenlik
+
+- **Veriler yalnızca cihazda** (IndexedDB) durur. GitHub Pages'te sadece uygulamanın dosyaları vardır; uygulama başka hiçbir sunucuya veri göndermez. Adresi açan herkes kendi cihazında boş bir uygulama görür, başkasının verisine erişemez.
+- **Uygulama şifresi (PIN):** cihazda geri çevrilemeyen SHA-256 özeti olarak saklanır, yedeğe konmaz. 5 yanlış denemeden sonra her yanlışta bekleme süresi uzar (30 sn → 15 dk); sayaç uygulama yeniden açılınca sıfırlanmaz. PIN girişi engeller, verileri şifrelemez; asıl koruma cihazın kendi şifresi / Face ID'sidir.
+- **Şifreli yedek:** PBKDF2-SHA256 (600.000 tur, rastgele tuz) ile türetilen anahtarla AES-256-GCM. Parola yalnızca cihazda saklanır, yedek dosyasına konmaz; başka cihaza geri yüklerken sorulur. Yanlış parola veya değiştirilmiş dosya açılmaz.
+- **Öneriler:** iPad'de şifre / Face ID ve otomatik kilit; GitHub ve Apple ID hesaplarında iki adımlı doğrulama; bu GitHub hesabından başka bir GitHub Pages sitesi yayınlamamak (aynı hesabın siteleri aynı adresi paylaşır).
+
 ## Geliştirme
 
 ```bash

@@ -27,7 +27,7 @@ export class LockedError extends LedgerError {}
 
 export const BACKUP_APP = 'mamas-burger-muhasebe';
 /** Settings that belong to this device, not to the books: never exported, kept on restore. */
-const DEVICE_SETTINGS = ['pinHash', 'lastBackupAt', 'storagePersisted'];
+export const DEVICE_SETTINGS = ['pinHash', 'pinFailures', 'backupPassphrase', 'lastBackupAt', 'storagePersisted'];
 export const BACKUP_VERSION = 1;
 
 export interface BackupFile {

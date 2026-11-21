@@ -10,7 +10,7 @@ import { useData } from '../../state/data';
 import { useUI } from '../../state/ui';
 import { Badge, Button, Card, CardTitle, DateInput, Field, MoneyInput, Notice, PageHeader, Segmented, TextArea, cx } from '../../ui';
 import { TxnRow } from '../txn/TxnRows';
-import { prepareBackup, shareBackup } from '../settings/backup';
+import { prepareBackup, shareBackup, type PreparedBackup } from '../settings/backup';
 
 const GROUPS: Array<{ type: PaymentMethodType; title: string; hint?: string }> = [
   { type: 'pos', title: 'Banka POS', hint: 'POS cihazlarının gün sonu raporundaki toplamlar' },
@@ -42,7 +42,7 @@ function DayCloseEditor({ date }: { date: string }) {
   const [counted, setCounted] = useState<Kurus | null>(null);
   const [directVar, setDirectVar] = useState<Kurus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [backup, setBackup] = useState<{ blob: Blob; filename: string } | null>(null);
+  const [backup, setBackup] = useState<PreparedBackup | null>(null);
 
   const cleanSales = useMemo(() => Object.fromEntries(Object.entries(sales).filter(([, v]) => v)) as Record<string, Kurus>, [sales]);
   const gross = Object.values(cleanSales).reduce((s, v) => s + v, 0);
